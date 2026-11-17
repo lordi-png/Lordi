@@ -6,7 +6,11 @@ Aset yang dipakai (folder assets/):
   arka_sheet2.png  — lembar karakter Arka (pose & ekspresi)
   arka_sheet.png   — lembar ekspresi Arka lama (untuk ekspresi tersenyum)
   arka_walk.gif    — animasi Arka berjalan (8 frame)
-Anak kecil, ibu warung, pejalan kaki, mobil, dan latar kota digambar prosedural.
+  arka_walk_back.gif — animasi Arka berjalan membelakangi (16 frame)
+  anak_sheet.png   — lembar karakter anak kecil (pose, jalan, duduk, ekspresi)
+  ibu_sheet.png    — lembar karakter ibu penjual warung
+Latar lembar dipisahkan otomatis (sprites.py). Pejalan kaki, mobil, dan latar kota
+digambar prosedural.
 
 Pemakaian:
   python3 episode1.py out.mp4                # render penuh
@@ -285,203 +289,71 @@ def walk_bob(phase):
 
 
 # ======================================================================
-# procedural child
+# anak kecil & ibu warung (dari lembar karakter) + Arka jalan membelakangi
 # ======================================================================
-SKIN = (198, 142, 102)
-SKIN_D = (170, 116, 84)
-HAIR = (34, 27, 30)
-SHIRT = (199, 162, 98)
-SHIRT_D = (160, 128, 78)
-PATCH = (118, 138, 150)
-SHORTS = (92, 72, 60)
-SANDAL = (60, 62, 74)
-IRIS = (66, 40, 28)
-LINE = (70, 45, 38)
+from sprites import cutout, split_by_body, split_strip
+
+_K = Image.open(os.path.join(A, "anak_sheet.png"))
+_I = Image.open(os.path.join(A, "ibu_sheet.png"))
+_sit = split_strip(_K, (10, 830, 840, 1020))
+KID = {
+    "front": cutout(_K, (35, 0, 195, 556)),
+    "sit_cross": _sit[0],   # duduk bersila
+    "sit_hug": _sit[1],     # memeluk lutut
+    "sit_sad": _sit[2],     # memeluk lutut, sedih
+    "sit_down": _sit[3],    # kepala tertunduk di lutut
+}
+KID_WALK = split_by_body(_K, (0, 585, 960, 795))      # menghadap kanan
 
 
-def draw_head(expr="neutral", blink=False, look_up=0.0, k=3, hijab=False):
-    """Head on 200x210 unit canvas; neck point = (100, 200)."""
-    im = Image.new("RGBA", (200 * k, 215 * k))
-    d = ImageDraw.Draw(im)
-
-    def P(*pts):
-        return [v * k for v in pts]
-
-    if hijab:
-        d.ellipse(P(14, 6, 186, 196), fill=(48, 98, 88))
-        d.polygon(P(20, 120, 100, 214, 180, 120), fill=(48, 98, 88))
-    else:
-        d.ellipse(P(22, 10, 178, 172), fill=HAIR)
-        d.ellipse(P(20, 96, 42, 132), fill=SKIN)
-        d.ellipse(P(158, 96, 180, 132), fill=SKIN)
-    d.ellipse(P(32, 32, 168, 186), fill=SKIN)
-    d.ellipse(P(58, 128, 142, 200), fill=SKIN)
-    if hijab:
-        d.arc(P(26, 18, 174, 150), 190, 350, fill=(38, 82, 74), width=10 * k)
-    else:
-        d.polygon(P(24, 98, 28, 44, 58, 16, 100, 8, 142, 16, 172, 44, 176, 98, 162, 70, 152, 90,
-                    136, 60, 121, 88, 103, 56, 86, 88, 70, 58, 55, 90, 40, 66), fill=HAIR)
-    # blush & dirt smudge
-    ov = Image.new("RGBA", im.size)
-    od = ImageDraw.Draw(ov)
-    od.ellipse(P(44, 136, 70, 152), fill=(235, 120, 110, 80))
-    od.ellipse(P(130, 136, 156, 152), fill=(235, 120, 110, 80))
-    if not hijab:
-        od.ellipse(P(134, 152, 150, 162), fill=(110, 80, 60, 70))
-    im.alpha_composite(ov.filter(ImageFilter.GaussianBlur(2 * k)))
-    d = ImageDraw.Draw(im)
-    ly = -5 * look_up
-    for cx in (70, 130):
-        inner = 1 if cx == 70 else -1
-        # brows
-        if expr in ("sad", "tired", "hope"):
-            d.line(P(cx - 14 * inner, 94, cx + 12 * inner, 88), fill=LINE, width=3 * k)
-        elif expr == "surprised":
-            d.arc(P(cx - 15, 80, cx + 15, 96), 200, 340, fill=LINE, width=3 * k)
-        else:
-            d.arc(P(cx - 15, 86, cx + 15, 100), 200, 340, fill=LINE, width=3 * k)
-        if blink or expr in ("happy", "kind"):
-            d.arc(P(cx - 15, 108, cx + 15, 128), 200, 340, fill=LINE, width=4 * k)
-            continue
-        ry = 20 if expr == "surprised" else 18
-        d.ellipse(P(cx - 16, 118 - ry, cx + 16, 118 + ry), fill=(250, 246, 240))
-        d.ellipse(P(cx - 12, 102 + ly, cx + 12, 134 + ly), fill=IRIS)
-        d.ellipse(P(cx - 6, 110 + ly, cx + 6, 126 + ly), fill=(25, 15, 12))
-        d.ellipse(P(cx - 8, 104 + ly, cx - 1, 111 + ly), fill=(255, 255, 255))
-        d.ellipse(P(cx + 3, 124 + ly, cx + 7, 128 + ly), fill=(255, 255, 255, 200))
-        if expr == "tired":
-            d.rectangle(P(cx - 18, 96, cx + 18, 113), fill=SKIN)
-            d.line(P(cx - 17, 113, cx + 17, 113), fill=LINE, width=4 * k)
-        else:
-            d.arc(P(cx - 18, 99, cx + 18, 137), 195, 345, fill=(40, 25, 22), width=4 * k)
-    d.line(P(101, 136, 98, 146), fill=SKIN_D, width=2 * k)
-    m = {"neutral": "line", "hope": "o", "sad": "down", "tired": "down", "surprised": "O",
-         "happy": "smile", "kind": "smile", "smile": "smile"}.get(expr, "line")
-    if m == "line":
-        d.line(P(92, 166, 108, 166), fill=LINE, width=3 * k)
-    elif m == "o":
-        d.ellipse(P(95, 160, 105, 170), fill=(150, 60, 60))
-    elif m == "O":
-        d.ellipse(P(92, 158, 108, 176), fill=(140, 50, 50))
-    elif m == "down":
-        d.arc(P(88, 164, 112, 180), 200, 340, fill=LINE, width=3 * k)
-    elif m == "smile":
-        d.chord(P(86, 150, 114, 176), 0, 180, fill=(160, 60, 60))
-        d.arc(P(86, 150, 114, 176), 0, 180, fill=LINE, width=2 * k)
-    if expr == "smile":   # tears of joy
-        d.ellipse(P(52, 132, 60, 146), fill=(170, 210, 255))
-        d.ellipse(P(140, 132, 148, 146), fill=(170, 210, 255))
-    return im
+def _kid_face(r, c):
+    return cutout(_K, (int(583 + c * 118.5), 40 + r * 129, int(583 + (c + 1) * 118.5), 40 + r * 129 + 116))
 
 
-def draw_body(pose="stand", k=3):
-    """Body on 260x440 unit canvas; neck point = (130, 150). Ground y≈430."""
-    im = Image.new("RGBA", (260 * k, 440 * k))
-    d = ImageDraw.Draw(im)
+KFACE = {k: card(_kid_face(*rc), panel=(236, 218, 198)) for k, rc in {
+    "hope": (0, 1), "tired": (3, 0), "surprised": (1, 1), "smile": (0, 2), "happy": (0, 4),
+    "sad": (3, 7)}.items()}
 
-    def P(*pts):
-        return [v * k for v in pts]
+_ik = dict(bright=238, sat=10, erode=3)
+IBU = {"sapa": cutout(_I, (865, 360, 982, 515), **_ik),
+       "pesan": cutout(_I, (1095, 360, 1210, 515), **_ik),
+       "senyum": cutout(_I, (1212, 360, 1306, 515), **_ik)}
 
-    def limb(pts, w_, col=SKIN):
-        d.line(P(*pts), fill=col, width=int(w_ * k), joint="curve")
-        for i in range(0, len(pts), 2):
-            r = w_ / 2
-            d.ellipse(P(pts[i] - r, pts[i + 1] - r, pts[i] + r, pts[i + 1] + r), fill=col)
+_gb = Image.open(os.path.join(A, "arka_walk_back.gif"))
+BACK_WALK = [cutout(f.convert("RGB"), bright=200, sat=10) for f in ImageSequence.Iterator(_gb)]
 
-    if pose in ("stand", "ask", "hold"):
-        limb([108, 330, 108, 418], 17)
-        limb([152, 330, 152, 418], 17)
-        d.ellipse(P(94, 414, 124, 428), fill=SANDAL)
-        d.ellipse(P(138, 414, 168, 428), fill=SANDAL)
-        d.polygon(P(94, 276, 166, 276, 170, 346, 134, 348, 130, 322, 126, 348, 90, 346), fill=SHORTS)
-        d.rectangle(P(120, 138, 140, 162), fill=SKIN_D)
-        shirt = [78, 166, 104, 152, 156, 152, 182, 166, 200, 214, 178, 224, 172, 200, 176, 300,
-                 84, 300, 88, 200, 82, 224, 60, 214]
-        d.polygon(P(*shirt), fill=SHIRT)
-        d.polygon(P(84, 300, 92, 290, 100, 302, 110, 292, 118, 302), fill=SHIRT)
-        d.polygon(P(150, 210, 172, 200, 176, 300, 150, 300), fill=SHIRT_D)
-        d.rectangle(P(138, 246, 160, 266), fill=PATCH)
-        d.arc(P(110, 146, 150, 170), 0, 180, fill=SHIRT_D, width=3 * k)
-        if pose == "stand":
-            limb([72, 222, 70, 296], 15)
-            limb([188, 222, 190, 296], 15)
-        elif pose == "ask":
-            limb([72, 222, 70, 296], 15)
-            limb([188, 220, 214, 262, 236, 258], 15)
-            d.chord(P(222, 246, 254, 270), 0, 180, fill=SKIN)
-        elif pose == "hold":
-            limb([72, 222, 92, 262, 116, 268], 15)
-            limb([188, 222, 168, 262, 144, 268], 15)
-    else:  # sitting, seen from the front
-        d.rectangle(P(120, 138, 140, 162), fill=SKIN_D)
-        d.polygon(P(76, 168, 104, 154, 156, 154, 184, 168, 192, 380, 68, 380), fill=SHIRT)
-        d.polygon(P(150, 200, 184, 180, 192, 380, 150, 380), fill=SHIRT_D)
-        d.ellipse(P(52, 350, 208, 424), fill=SHORTS)
-        if pose in ("sit", "sit_tired"):
-            for kx in (104, 156):
-                limb([kx, 300, kx, 404], 30)
-                d.ellipse(P(kx - 20, 398, kx + 20, 420), fill=SANDAL)
-            limb([70, 210, 76, 322, 124, 330], 16)
-            limb([190, 210, 184, 322, 136, 330], 16)
-        else:  # sit_hold — holding food in front
-            for kx, fx in ((96, 86), (164, 174)):
-                limb([kx, 318, fx, 404], 30)
-                d.ellipse(P(fx - 20, 398, fx + 20, 420), fill=SANDAL)
-            limb([70, 210, 82, 280, 114, 292], 16)
-            limb([190, 210, 178, 280, 146, 292], 16)
-    return im
+_kid_cache = {}
 
 
-_child_cache = {}
+def by_height(im, h, key):
+    k = (key, int(h))
+    if k not in _kid_cache:
+        if len(_kid_cache) > 600:
+            _kid_cache.clear()
+        s = h / im.height
+        r = im.resize((max(1, int(im.width * s)), int(h)), Image.LANCZOS)
+        if s > 1.3:
+            r = r.filter(ImageFilter.UnsharpMask(1.6, 60, 2))
+        _kid_cache[k] = r
+    return _kid_cache[k]
 
 
-def child(pose="sit", expr="neutral", t=0.0, look_up=0.0, k=1.0, tilt=0.0):
-    """Full child sprite (bottom = feet). k: final scale (1 ≈ 440 px tall standing)."""
-    blink = (t % 3.7) < 0.12
-    key = (pose, expr, blink, round(look_up, 1), round(k, 2), round(tilt, 0))
-    if key in _child_cache:
-        return _child_cache[key]
-    rk = 2
-    body = draw_body(pose, rk)
-    head = draw_head(expr, blink, look_up, rk).resize((int(200 * rk * 0.66), int(215 * rk * 0.66)),
-                                                     Image.LANCZOS)
-    sitting = pose.startswith("sit")
-    nx, ny = 130 * rk, 150 * rk
-    canvas = Image.new("RGBA", (body.width, body.height + int(140 * rk)))
-    oy = int(140 * rk)
-    canvas.alpha_composite(body, (0, oy))
-    h = head.rotate(tilt + (-8 if pose == "sit_tired" else 0), Image.BICUBIC, expand=False,
-                    center=(head.width / 2, head.height * 0.93))
-    canvas.alpha_composite(h, (int(nx - h.width / 2), int(ny + oy - h.height * 0.93 + (18 if sitting else 0))))
-    canvas = canvas.crop(canvas.getbbox())
-    out = canvas.resize((int(canvas.width * k / rk * 0.85), int(canvas.height * k / rk * 0.85)),
-                        Image.LANCZOS)
-    if len(_child_cache) > 400:
-        _child_cache.clear()
-    _child_cache[key] = out
-    return out
+def kid(pose, h):
+    return by_height(KID[pose], h, pose)
 
 
-def child_closeup(expr, t, look_up=0.0, pose="stand"):
-    """Head-and-shoulders crop of a large child render."""
-    sp = child(pose, expr, t, look_up, k=2.6)
-    c = sp.crop((0, 0, sp.width, int(sp.height * 0.6)))
-    s_ = 820 / c.height
-    return c.resize((int(c.width * s_), 820), Image.BILINEAR)
+def kid_walk(t, h, fps=10):
+    i = int(t * fps) % len(KID_WALK)
+    return by_height(KID_WALK[i], h, ("walk", i))
 
 
-def ibu(expr="neutral", t=0.0):
-    blink = (t % 4.1) < 0.12
-    k = 2
-    head = draw_head("kind" if expr == "smile" else "neutral", blink, 0, k, hijab=True)
-    im = Image.new("RGBA", (300 * k, 420 * k))
-    d = ImageDraw.Draw(im)
-    d.polygon([(40 * k, 420 * k), (60 * k, 250 * k), (110 * k, 215 * k), (190 * k, 215 * k),
-               (240 * k, 250 * k), (260 * k, 420 * k)], fill=(160, 70, 70))
-    d.polygon([(95 * k, 260 * k), (205 * k, 260 * k), (215 * k, 420 * k), (85 * k, 420 * k)], fill=(235, 225, 205))
-    d.polygon([(90 * k, 205 * k), (150 * k, 250 * k), (210 * k, 205 * k)], fill=(48, 98, 88))
-    im.alpha_composite(head, (int(150 * k - head.width / 2), int(20 * k)))
-    return im.resize((300, 420), Image.LANCZOS)
+def back_walk(t, h, fps=8.3):
+    i = int(t * fps) % len(BACK_WALK)
+    return by_height(BACK_WALK[i], h, ("back", i))
+
+
+def ibu(pose, h=380):
+    return by_height(IBU[pose], h, ("ibu", pose))
 
 
 # ======================================================================
@@ -499,6 +371,31 @@ def nasi_bungkus(k=1.0):
 
 
 BUNGKUS = nasi_bungkus(1.0)
+
+
+def kantong(k=1.0):
+    """Kantong plastik bening berisi dua bungkus nasi."""
+    w_, h_ = int(150 * k), int(170 * k)
+    im = Image.new("RGBA", (w_, h_))
+    d = ImageDraw.Draw(im)
+    lw = max(2, int(5 * k))
+    d.arc((w_ * 0.18, 0, w_ * 0.48, h_ * 0.42), 180, 360, fill=(245, 245, 245, 230), width=lw)
+    d.arc((w_ * 0.52, 0, w_ * 0.82, h_ * 0.42), 180, 360, fill=(245, 245, 245, 230), width=lw)
+    d.rounded_rectangle((w_ * 0.08, h_ * 0.2, w_ * 0.92, h_ * 0.98), int(24 * k), fill=(250, 250, 252, 120),
+                        outline=(255, 255, 255, 200), width=max(1, int(2 * k)))
+    b = nasi_bungkus(0.55 * k)
+    im.alpha_composite(b, (int(w_ * 0.14), int(h_ * 0.42)))
+    im.alpha_composite(b.transpose(Image.FLIP_LEFT_RIGHT), (int(w_ * 0.4), int(h_ * 0.55)))
+    gl = Image.new("RGBA", im.size)
+    ImageDraw.Draw(gl).rounded_rectangle((w_ * 0.08, h_ * 0.2, w_ * 0.92, h_ * 0.98), int(24 * k),
+                                         fill=(255, 255, 255, 60))
+    im.alpha_composite(gl)
+    d = ImageDraw.Draw(im)
+    d.line((w_ * 0.2, h_ * 0.3, w_ * 0.26, h_ * 0.85), fill=(255, 255, 255, 150), width=max(1, int(3 * k)))
+    return im
+
+
+KANTONG = kantong(1.0)
 
 
 def phone_wallet_layer(alpha, t):
@@ -976,7 +873,7 @@ def sc_a1(img, lt, t):
         cx = street_shot(img, t, "dusk", cam)
         cxs = CHILD_X - cx
         shadow_ellipse(img, cxs, 1110, 150)
-        put(img, child("sit", "tired", t, k=0.55), cxs, 1112)
+        put(img, kid("sit_hug", 210), cxs, 1112)
         chapter_card(img, lt, 0.3, 4.2, "ADEGAN 1", "Pertemuan yang Biasa")
         narr(img, lt, 4.4, 8.0, "Sore hari. Jalanan kota ramai seperti biasa. Di pinggir jalan, seorang anak kecil duduk meminta-minta.")
         if lt > 5:
@@ -992,17 +889,17 @@ def sc_a1(img, lt, t):
         put(img, gif_frame(t), ax, ay, scale=lerp(0.75, 1.25, ease(p)))
         cxs = CHILD_X - cx
         if lt < 10.5:
-            put(img, child("sit", "tired", t, look_up=0.5, k=0.55), cxs, 1112)
+            put(img, kid("sit_hug", 210), cxs, 1112)
+        elif lt < 14.3:
+            q = (lt - 10.5) / 3.8
+            put(img, kid_walk(t, lerp(300, 420, q)), lerp(cxs, 520, q), lerp(1115, 1185, q), flip=True)
         else:
-            q = ease((lt - 10.5) / 4)
-            bob = -abs(math.sin(lt * 7)) * 6 * (1 - q * 0.5) if q < 1 else 0
-            put(img, child("stand", "hope", t, look_up=0.8, k=lerp(0.6, 0.92, q)),
-                lerp(cxs, 520, q), lerp(1120, 1180, q) + bob)
+            put(img, kid("front", 430), 520, 1185)
         return dict(grade=COLD)
     if lt < 19.5:  # child close-up asking
         img.alpha_composite(blurred("dusk"))
         q = (lt - 15) / 4.5
-        put(img, child_closeup("hope", t, look_up=1.0), 360, 1010 + 6 * math.sin(t * 2), scale=1 + 0.04 * q)
+        put(img, KFACE["hope"], 360, 560 + 4 * math.sin(t * 2), "center", scale=1 + 0.04 * q)
         say(img, lt, 15.3, 19.4, "Om... boleh minta uang untuk makan?", "ANAK KECIL", (255, 210, 140))
         return dict(grade=COLD)
     if lt < 22:  # Arka reaction
@@ -1016,7 +913,7 @@ def sc_a1(img, lt, t):
         cx = street_shot(img, t, "dusk", cam, people=4)
         jig = 3 * math.sin(t * 18) if lt < 24 else 0
         put(img, ARKA["front"], 250 + jig, 1200, scale=1.0)
-        put(img, child("stand", "hope" if lt < 26 else "sad", t, look_up=0.8, k=0.92), 540, 1185)
+        put(img, kid("front", 430), 540, 1185)
         img.alpha_composite(phone_wallet_layer(fade(lt, 22.3, 25.8, 0.3), t))
         narr(img, lt, 22.2, 25.8, "Hanya ada ponsel dan dompet — tanpa uang tunai.")
         say(img, lt, 25.9, 29, "Maaf ya, Dek. Om nggak bawa uang.", "ARKA", (150, 195, 255))
@@ -1027,13 +924,15 @@ def sc_a1(img, lt, t):
     cx = street_shot(img, t, "dusk", cam)
     cxs = CHILD_X - cx
     ph = t * 1.6
-    if p < 0.35:
-        put(img, child("stand", "sad", t, k=lerp(0.92, 0.6, ease(p / 0.35))), lerp(540, cxs, ease(p / 0.35)), lerp(1170, 1112, ease(p / 0.35)))
+    if p < 0.3:
+        q = p / 0.3
+        put(img, kid_walk(t, lerp(420, 260, q)), lerp(540, cxs, q), lerp(1185, 1115, q))
     else:
-        put(img, child("sit", "sad", t, k=0.55), cxs, 1112)
-    put(img, ARKA["back"], lerp(260, 150, p), lerp(1230, 1010, p) + walk_bob(ph), scale=lerp(0.95, 0.5, p),
-        rot=1.5 * math.sin(ph * 2 * math.pi))
-    tail = (lerp(260, 150, p), lerp(500, 680, p))
+        put(img, kid("sit_sad", 210), cxs, 1112)
+    ah = lerp(440, 220, p)
+    ax, ay = lerp(260, 150, p), lerp(1230, 1010, p)
+    put(img, back_walk(t, ah), ax, ay)
+    tail = (ax, ay - ah - 30)
     bubble(img, lt, 29.6, 32.4, "Ah, paling juga penipu.", "pikiran", (380, 330), tail)
     bubble(img, lt, 32.6, 36.6, "Zaman sekarang banyak orang memanfaatkan anak kecil untuk meminta uang.",
            "pikiran", (380, 330), tail)
@@ -1042,12 +941,12 @@ def sc_a1(img, lt, t):
     return dict(grade=COLD)
 
 
-def pass_by(img, t, lt, theme, dur, cam=950, child_pose="sit", child_expr="tired", rain_on=False,
+def pass_by(img, t, lt, theme, dur, cam=950, child_pose="sit_hug", rain_on=False,
             people=5, lights=0.5):
     cx = street_shot(img, t, theme, cam, people=people, lights=lights)
     cxs = CHILD_X - cx
     shadow_ellipse(img, cxs, 1110, 150)
-    put(img, child(child_pose, child_expr, t, k=0.58), cxs, 1112)
+    put(img, kid(child_pose, 210), cxs, 1112)
     p = lt / dur
     x = lerp(-120, W + 120, p)
     ph = t * 1.5
@@ -1065,19 +964,19 @@ def sc_a2(img, lt, t):
         return dict(grade=NEUTRAL)
     if lt < 9:
         l = lt - 1.8
-        x = pass_by(img, t, l, "grey", 7.2, child_expr="neutral", lights=0)
+        x = pass_by(img, t, l, "grey", 7.2, lights=0)
         day_card(img, l, 0.1, 2.4, "Hari ke-2")
         bubble(img, l, 2.4, 7.0, "Masih anak itu.", "pikiran", (360, 330), (x, 470))
         return dict(grade=NEUTRAL)
     if lt < 16.5:
         l = lt - 9
-        x = pass_by(img, t, l, "rain", 7.5, child_expr="sad", rain_on=True, people=3, lights=0.7)
+        x = pass_by(img, t, l, "rain", 7.5, child_pose="sit_sad", rain_on=True, people=3, lights=0.7)
         day_card(img, l, 0.1, 2.4, "Hari ke-3")
         bubble(img, l, 2.4, 7.3, "Kenapa setiap hari di sini?", "pikiran", (360, 330), (x, 470))
         return dict(grade=COLD)
     if lt < 24:
         l = lt - 16.5
-        x = pass_by(img, t, l, "evening", 7.5, child_pose="sit_tired", child_expr="tired", lights=1.0)
+        x = pass_by(img, t, l, "evening", 7.5, child_pose="sit_down", lights=1.0)
         day_card(img, l, 0.1, 2.2, "Hari ke-4")
         bubble(img, l, 2.2, 4.6, "Sudahlah, bukan urusanku.", "pikiran", (360, 330), (x, 470))
         narr(img, l, 4.8, 7.5, "Anak itu terlihat lebih lelah. Tetapi Arka tetap berjalan melewatinya.")
@@ -1098,7 +997,7 @@ def sc_a3(img, lt, t):
         cx = street_shot(img, t, "sunset", cam, people=2, cars=0.5, lights=0.6)
         cxs = CHILD_X - cx
         shadow_ellipse(img, cxs, 1110, 150)
-        put(img, child("sit_tired", "tired", t, k=0.58), cxs, 1112)
+        put(img, kid("sit_down", 200), cxs, 1112)
         p = min(1, lt / 6)
         x = lerp(-120, 230, ease(p) if p < 1 else 1)
         if lt < 6:
@@ -1133,7 +1032,7 @@ def sc_a3(img, lt, t):
         return dict(grade=COLD if l < 8 else WARM)
     if lt < 29.5:  # child close-up once more
         img.alpha_composite(blurred("sunset"))
-        put(img, child_closeup("tired", t, 0.0), 360, 1010, scale=1.0 + 0.01 * (lt - 26.5))
+        put(img, KFACE["tired"], 360, 560, "center", scale=1.0 + 0.02 * (lt - 26.5))
         narr(img, lt, 26.6, 29.5, "Arka terdiam. Ia melihat anak itu sekali lagi...", y=860)
         return dict(grade=WARM)
     # pan to warung
@@ -1159,14 +1058,13 @@ def sc_a4(img, lt, t):
     if lt < 17:  # inside warung
         l = lt - 6
         img.alpha_composite(WARUNG_BG)
-        put(img, ibu("smile" if l > 7.4 else "neutral", t), 360, 800 + 3 * math.sin(t * 1.5))
+        put(img, ibu("sapa" if l < 3.4 else ("pesan" if l < 7.4 else "senyum")), 380, 792 + 3 * math.sin(t * 1.5))
         img.alpha_composite(WARUNG_COUNTER)
         steam(img, t, 150, 640)
         steam(img, t + 1.3, 560, 640)
-        if l > 4.5:
-            k_ = min(1, (l - 4.5) / 0.4)
-            put(img, BUNGKUS, 330, 762 - 30 * (1 - k_), alpha=k_)
-            put(img, BUNGKUS, 420, 762 - 30 * (1 - k_), alpha=k_, flip=True)
+        if l > 7.4:
+            k_ = min(1, (l - 7.4) / 0.4)
+            put(img, KANTONG, 470, 772 - 30 * (1 - k_), alpha=k_, scale=0.9)
         put(img, ARKA["back"], 150, 1420, scale=1.3)
         say(img, l, 0.4, 3.4, "Untuk siapa, Mas?", "PENJUAL WARUNG", (255, 190, 150))
         say(img, l, 3.5, 7.3, "Untuk anak kecil yang di pinggir jalan itu, Bu.", "ARKA", (150, 195, 255))
@@ -1178,7 +1076,7 @@ def sc_a4(img, lt, t):
     cx = street_shot(img, t, "sunset", cam, people=2, cars=0.5)
     cxs = CHILD_X - cx
     shadow_ellipse(img, cxs, 1110, 150)
-    put(img, child("sit_tired", "tired", t, k=0.58), cxs, 1112)
+    put(img, kid("sit_down", 200), cxs, 1112)
     p = l / 8
     x = lerp(-120, cxs - 170, ease(p))
     ph = t * 1.5
@@ -1186,7 +1084,7 @@ def sc_a4(img, lt, t):
     spr = side_walk(ph % 1) if moving else ARKA["side"]
     y = 1215 + (walk_bob(ph) if moving else 0)
     put(img, spr, x, y, flip=True)
-    put(img, BUNGKUS, x + 22, y - 330 + (4 * math.sin(ph * 4 * math.pi) if moving else 0), scale=0.55)
+    put(img, KANTONG, x + 18, y - 215, scale=0.6, rot=(6 * math.sin(ph * 2 * math.pi) if moving else 0))
     narr(img, l, 0.3, 4.0, "Untuk pertama kalinya, ia tidak berjalan melewatinya.")
     narr(img, l, 4.1, 8.0, "Ia justru berjalan mendekatinya.")
     return dict(grade=WARM)
@@ -1205,7 +1103,7 @@ def sc_a5(img, lt, t):
         two_shot_bg(img)
         put(img, ARKA["front"], 210, 1300, scale=1.15)
         lu = ease((lt - 2.5) / 0.8)
-        put(img, child("sit", "tired" if lt < 2.6 else "surprised", t, look_up=lu, k=1.0), 520, 1150)
+        put(img, kid("sit_hug" if lt < 2.6 else "sit_cross", 400), 520, 1150)
         chapter_card(img, lt, 0.0, 1.6, "ADEGAN 5", "Memberi Tanpa Banyak Bertanya")
         say(img, lt, 1.4, 3.0, "Dek...", "ARKA", (150, 195, 255))
         say(img, lt, 3.1, 6.0, "Iya, Om?", "ANAK KECIL", (255, 210, 140))
@@ -1214,14 +1112,14 @@ def sc_a5(img, lt, t):
         l = lt - 6
         two_shot_bg(img)
         put(img, ARKA["sit"], 230, 1190, scale=1.85)
-        put(img, child("sit", "surprised", t, look_up=0.6, k=1.0), 530, 1150)
+        put(img, kid("sit_cross", 400), 530, 1150)
         reach = ease(l / 1.2)
-        put(img, BUNGKUS, lerp(330, 390, reach), lerp(930, 900, reach), "center", scale=0.9)
+        put(img, KANTONG, lerp(330, 400, reach), lerp(830, 800, reach), "center", scale=0.85)
         say(img, l, 0.3, 5.0, "Ini buat kamu. Makan ya.", "ARKA", (150, 195, 255))
         return dict(grade=WARM)
     if lt < 15:  # child unsure
         img.alpha_composite(blurred("sunset"))
-        put(img, child_closeup("surprised", t, 0.3), 360, 1010)
+        put(img, KFACE["surprised"], 360, 560, "center", scale=1 + 0.02 * (lt - 11))
         say(img, lt, 11.2, 15, "Ini... buat aku, Om?", "ANAK KECIL", (255, 210, 140))
         return dict(grade=WARM)
     if lt < 18:
@@ -1231,16 +1129,16 @@ def sc_a5(img, lt, t):
         return dict(grade=WARM)
     if lt < 22:
         img.alpha_composite(blurred("golden"))
-        put(img, child_closeup("smile", t, 0.4, pose="hold"), 360, 1010)
-        put(img, BUNGKUS, 360, 800, "center", scale=1.6)
+        put(img, KFACE["smile"], 360, 560, "center", scale=1 + 0.02 * (lt - 18))
+        put(img, KANTONG, 360, 830, "center", scale=1.2)
         say(img, lt, 18.2, 22, "Makasih banyak, Om...", "ANAK KECIL", (255, 210, 140))
         return dict(grade=GOLD)
     l = lt - 22  # warm two-shot, narration
     two_shot_bg(img)
     motes(img, t)
     put(img, ARKA["sit"], 230, 1190, scale=1.85)
-    put(img, child("sit_hold", "happy", t, k=1.0), 530, 1150)
-    put(img, BUNGKUS, 530, 960, "center", scale=0.9)
+    put(img, kid("sit_cross", 400), 530, 1150)
+    put(img, KANTONG, 530, 1060, "center", scale=0.8)
     put(img, FACE["smile"], 360, 300, "center", alpha=fade(l, 0.3, 8, 0.6), scale=0.55)
     narr(img, l, 0.3, 4.0, "Tidak ada percakapan panjang. Tidak ada pertanyaan tentang siapa anak itu.", y=470)
     narr(img, l, 4.1, 8.0, "Hanya sebungkus makanan sederhana, untuk seseorang yang mungkin sedang membutuhkannya.", y=470)
@@ -1281,13 +1179,12 @@ def sc_a7(img, lt, t):
     motes(img, t)
     cxs = CHILD_X - cx
     shadow_ellipse(img, cxs, 1110, 150)
-    put(img, child("sit_hold", "happy", t, k=0.58), cxs, 1112)
-    put(img, BUNGKUS, cxs, 1112 - 140, "center", scale=0.45)
+    put(img, kid("sit_cross", 210), cxs, 1112)
+    put(img, KANTONG, cxs, 1112 - 45, "center", scale=0.4)
     if lt > 20:  # Arka walks away into the distance
         p = (lt - 20) / 20
         ph = t * 1.6
-        put(img, ARKA["back"], lerp(cxs - 260, 200, p), lerp(1230, 1000, p) + walk_bob(ph),
-            scale=lerp(0.9, 0.45, p), rot=1.2 * math.sin(ph * 2 * math.pi))
+        put(img, back_walk(t, lerp(430, 200, p)), lerp(cxs - 260, 200, p), lerp(1230, 1000, p))
     if lt < 2.6:
         chapter_card(img, lt, 0.0, 2.6, "ADEGAN 7", "Sebuah Pelajaran Kehidupan")
     L = [(2.7, 6.2, "Setiap hari, kita bertemu dengan banyak orang."),
