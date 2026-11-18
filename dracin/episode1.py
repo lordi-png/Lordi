@@ -646,11 +646,7 @@ def put_sprite(f, sp, x, y, h, alpha=1.0, flip=False, tint=None):
     rgb, al = a[..., :3], a[..., 3:] * alpha
     if tint is not None:
         rgb = rgb * np.array(tint, np.float32)
-    x0, y0 = int(x - im.width / 2), int(y - im.height)
-    xs, ys = max(0, -x0), max(0, -y0)
-    x1, y1 = min(W, x0 + im.width), min(H, y0 + im.height)
-    if x1 <= max(0, x0) or y1 <= max(0, y0):
-        return f
+    return _blit(f, rgb, al, int(x - im.width / 2), int(y - im.height))
     reg = f[max(0, y0):y1, max(0, x0):x1]
     sa = al[ys:ys + reg.shape[0], xs:xs + reg.shape[1]]
     sr = rgb[ys:ys + reg.shape[0], xs:xs + reg.shape[1]]
@@ -658,18 +654,26 @@ def put_sprite(f, sp, x, y, h, alpha=1.0, flip=False, tint=None):
     return f
 
 
+def _blit(f, rgb, al, x0, y0, mode="over"):
+    h_, w_ = al.shape[:2]
+    dx0, dy0 = max(0, x0), max(0, y0)
+    dx1, dy1 = min(W, x0 + w_), min(H, y0 + h_)
+    if dx1 <= dx0 or dy1 <= dy0:
+        return f
+    sx0, sy0 = dx0 - x0, dy0 - y0
+    sa = al[sy0:sy0 + dy1 - dy0, sx0:sx0 + dx1 - dx0]
+    sr = rgb[sy0:sy0 + dy1 - dy0, sx0:sx0 + dx1 - dx0]
+    reg = f[dy0:dy1, dx0:dx1]
+    top = np.maximum(reg, sr) if mode == "lighten" else sr
+    f[dy0:dy1, dx0:dx1] = reg * (1 - sa) + top * sa
+    return f
+
+
 def put_dragon(f, x, y, h, alpha=1.0):
     s = h / DRAGON_KEY.height
     im = DRAGON_KEY.resize((int(DRAGON_KEY.width * s), int(h)), Image.BILINEAR)
     a = np.asarray(im, np.float32) / 255.0
-    x0, y0 = int(x - im.width / 2), int(y - im.height / 2)
-    xs, ys = max(0, -x0), max(0, -y0)
-    x1, y1 = min(W, x0 + im.width), min(H, y0 + im.height)
-    reg = f[max(0, y0):y1, max(0, x0):x1]
-    sa = a[ys:ys + reg.shape[0], xs:xs + reg.shape[1], 3:] * alpha
-    sr = a[ys:ys + reg.shape[0], xs:xs + reg.shape[1], :3]
-    f[max(0, y0):y1, max(0, x0):x1] = reg * (1 - sa) + np.maximum(reg, sr) * sa
-    return f
+    return _blit(f, a[..., :3], a[..., 3:] * alpha, int(x - im.width / 2), int(y - im.height / 2), "lighten")
 
 
 def sh_seal(lt, t):
