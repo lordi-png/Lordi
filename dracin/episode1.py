@@ -28,6 +28,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sprites import cutout, split_strip  # noqa: E402
+from rig import LipSync, Rig, sprite_motion  # noqa: E402
 
 W, H = 720, 1280
 FPS = int(os.environ.get("FPS", 60))
@@ -267,8 +268,9 @@ def panel_assets(key, src, band_h, over=1.18):
     return _panel_cache[key]
 
 
-def panel(key, src, lt, dur, band_h=560, cy=600, pan=(0.0, 0.0), zoom=(1.0, 1.08), sh=(0, 0), rot=0.0):
-    big, cov, m, z = panel_assets(key, src, band_h)
+def panel(key, src, lt, dur, band_h=560, cy=600, pan=(0.0, 0.0), zoom=(1.0, 1.08), sh=(0, 0), rot=0.0, big=None):
+    big0, cov, m, z = panel_assets(key, src, band_h)
+    big = big or big0
     p = eio(lt / dur)
     zz = lerp(*zoom, p)
     bgc = view(cov, cov.width / 2 + pan[0] * 20 * p, cov.height / 2, 1.0 + 0.04 * p, rot * 0.5)
@@ -287,6 +289,95 @@ def full(src, lt, dur, c0, c1, z0, z1, sh=(0, 0), rot=0.0):
     cx = min(max(lerp(c0[0], c1[0], p) + sh[0], hw), src.width - hw)
     cy = min(max(lerp(c0[1], c1[1], p) + sh[1], hh), src.height - hh)
     return view(src, cx, cy, z, rot)
+
+
+# ======================================================================
+# rigs (napas, angin rambut, kepala, bibir, kedip, ekspresi, jari)
+# ======================================================================
+LIANG_SPEC = dict(
+    eyes=[(218, 207, 20, 8), (290, 226, 17, 7)], brows=[(220, 187, 30, 9), (293, 207, 22, 8)],
+    mouth=(244, 297, 25, 9), chin=(250, 338, 42, 24), face_box=(150, 160, 340, 380),
+    head=dict(pivot=(255, 395), cx=235, cy=215, rx=140, ry=190),
+    chest=(250, 540, 170, 100), shoulders=[(90, 440, 90, 45), (370, 470, 60, 40)],
+    hair=[dict(c=(70, 360), r=(85, 200), root=(110, 170), dir=(-0.25, 1), len=330, amp=7),
+          dict(c=(330, 300), r=(55, 150), root=(310, 150), dir=(0.2, 1), len=260, amp=5),
+          dict(c=(25, 260), r=(30, 90), root=(35, 180), dir=(-0.1, 1), len=150, amp=6)])
+HERO_SPEC = dict(
+    eyes=[(324, 128, 9, 4), (367, 131, 8, 4)], brows=[(322, 117, 14, 4), (366, 120, 12, 4)],
+    mouth=(336, 178, 12, 4), chin=(342, 198, 20, 12), face_box=(290, 95, 405, 220),
+    head=dict(pivot=(345, 228), cx=340, cy=120, rx=80, ry=105),
+    chest=(330, 300, 100, 70), shoulders=[(250, 240, 60, 30)],
+    hair=[dict(c=(180, 110), r=(150, 75), root=(290, 110), dir=(-1, 0.1), len=260, amp=4),
+          dict(c=(400, 190), r=(35, 80), root=(395, 120), dir=(0.1, 1), len=140, amp=3)],
+    fingers=dict(pivot=(165, 290), c=(95, 320), r=(60, 45)))
+DHEAD_SPEC = dict(
+    eyes=[(220, 226, 12, 7)], face_box=(180, 190, 260, 260),
+    head=dict(pivot=(60, 470), cx=220, cy=260, rx=200, ry=240),
+    jaw=dict(hinge=(215, 305), c=(285, 368), r=(80, 50), max=0.12),
+    hair=[dict(c=(90, 250), r=(110, 240), root=(210, 210), dir=(-1, 0.3), len=210, amp=7),
+          dict(c=(170, 60), r=(130, 70), root=(230, 160), dir=(-0.5, -1), len=160, amp=5),
+          dict(c=(300, 430), r=(70, 45), root=(300, 392), dir=(0, 1), len=80, amp=4)])
+DFULL_SPEC = dict(
+    head=dict(pivot=(200, 260), cx=110, cy=90, rx=110, ry=90),
+    hair=[dict(c=(110, 90), r=(120, 90), root=(150, 110), dir=(-1, 0.2), len=130, amp=4)],
+    sway=4)
+LIANG_RIG = Rig(LIANG_PORTRAIT, LIANG_SPEC, 2.0, seed=1)
+DHEAD_RIG = Rig(DRAGON_HEAD, DHEAD_SPEC, 2.2, seed=4)
+DFULL_RIG = Rig(DRAGON_FULL, DFULL_SPEC, 2.0, seed=5)
+_HB = None
+
+
+def hero_rig():
+    global _HB
+    if _HB is None:
+        big = panel_assets("hero", HERO, 640)[0]
+        _HB = Rig(big, HERO_SPEC, big.width / HERO.width, seed=2)
+    return _HB
+
+
+def _raw(name):
+    import wave as _w
+    with _w.open(os.path.join(A, "audio", name + ".wav")) as wf:
+        x = np.frombuffer(wf.readframes(wf.getnframes()), np.int16).astype(np.float32) / 32768
+        return x.reshape(-1, wf.getnchannels()).mean(1), wf.getframerate()
+
+
+_LIPS = None
+
+
+def lips():
+    global _LIPS
+    if _LIPS is None:
+        B0 = 63.3
+        sched = [(s, w, c) for s, d, w, c, x, k in DIALOG] + [
+            (B0 + 31.2, "D", "d_03"), (B0 + 34.0, "L", "l_06"), (123.4, "D", "d_04"), (128.2, "D", "d_05")]
+        _LIPS = [(s, w, LipSync(*_raw(c), fps=60)) for s, w, c in sched]
+    return _LIPS
+
+
+def mouth(who, t):
+    for s, w, ls in lips():
+        if w == who and s <= t < s + ls.dur:
+            o, wd = ls.at(t - s)
+            talk = min(1.0, (t - s) / 0.3, (s + ls.dur - t) / 0.3)
+            return (o, wd), max(0.0, talk)
+    return (0.0, 0.5), 0.0
+
+
+EXPR_L = [(0.0, {}), (36.6, {"brow": -0.3}), (47.2, {"smile": 0.45, "brow": 0.15}),
+          (59.4, {"brow": -0.85, "squint": 0.5}), (100.0, {"brow": -0.6, "squint": 0.3}),
+          (141.0, {"smile": 0.25})]
+
+
+def expr_at(t, table=EXPR_L, tr=0.9):
+    prev, cur = {}, {}
+    for i, (s, e) in enumerate(table):
+        if t >= s:
+            prev, cur, start = (table[i - 1][1] if i else {}), e, s
+    k = min(1.0, (t - start) / tr)
+    k = k * k * (3 - 2 * k)
+    keys = set(prev) | set(cur)
+    return {k_: prev.get(k_, 0) * (1 - k) + cur.get(k_, 0) * k for k_ in keys}
 
 
 # ======================================================================
@@ -603,7 +694,8 @@ def sh_open(lt, t):
 
 
 def sh_title(lt, t):
-    img = panel("hero", HERO, lt, 7.0, band_h=640, cy=620, pan=(0.25, 0.0), zoom=(1.0, 1.1))
+    img = panel("hero", HERO, lt, 7.0, band_h=640, cy=620, pan=(0.25, 0.0), zoom=(1.0, 1.1),
+                big=hero_rig().frame(t, expr={"brow": -0.2}))
     f = to_f(img)
     fx = FX()
     lightning(fx, t, 11, (60, 420), (700, 760), col=(140, 170, 255), every=1.1)
@@ -705,8 +797,10 @@ def sh_arrive(lt, t):
     f = fx.apply(f)
     p = lt / d
     x = lerp(180, 420, eio(p))
-    pose = LP[WALK[int(lt * 3.2) % 4]] if p < 0.9 else LP["front"]
-    bob = -abs(math.sin(lt * 3.2 * math.pi / 2)) * 6 if p < 0.9 else 0
+    walking = p < 0.9
+    pose = LP[WALK[int(lt * 3.2) % 4]] if walking else LP["front"]
+    bob = -abs(math.sin(lt * 3.2 * math.pi / 2)) * 6 if walking else 0
+    pose = sprite_motion(pose, t, step_phase=lt * 1.6 if walking else None)
     f = put_sprite(f, pose, x, 1150 + bob, 520)
     f = subtitle(f, lt, 0.3, 4.4, "Liang Chen, Penguasa Pedang Dewa, datang seorang diri.", "NARATOR")
     return f
@@ -716,7 +810,7 @@ def sh_awaken(lt, t):
     d = 2.5
     k = ease(lt / 0.6)
     sx, sy = shake(t, 4 + 12 * fade(lt, 0.3, 2.5, 0.3))
-    img = full(DRAGON_FULL, lt, d, (414, 900), (414, 380), 1.05, 1.15, (sx, sy))
+    img = full(DFULL_RIG.frame(t, wind=2.0), lt, d, (414, 900), (414, 380), 1.05, 1.15, (sx, sy))
     f = to_f(img) * (0.25 + 0.75 * k)
     fx = FX()
     for i in range(3):
@@ -727,10 +821,11 @@ def sh_awaken(lt, t):
 
 def sh_dialog_dragon(src_kind, lt, t, dur, text, a=0.1, b=None, close=False):
     sx, sy = shake(t, 2)
+    mo, talk = mouth("D", t)
     if src_kind == "head":
-        img = full(DRAGON_HEAD, lt, dur, (380, 560), (420, 520), 1.0, 1.12, (sx, sy))
+        img = full(DHEAD_RIG.frame(t, mo, talk, wind=1.6), lt, dur, (380, 560), (420, 520), 1.0, 1.12, (sx, sy))
     elif src_kind == "full":
-        img = full(DRAGON_FULL, lt, dur, (430, 500), (400, 420), 1.15, 1.3, (sx, sy))
+        img = full(DFULL_RIG.frame(t, mo, talk, wind=1.6), lt, dur, (430, 500), (400, 420), 1.15, 1.3, (sx, sy))
     else:
         img = panel(src_kind, dtile(*src_kind), lt, dur, band_h=560, cy=560, pan=(0.3, 0), zoom=(1.0, 1.12),
                     sh=(sx, sy))
@@ -744,10 +839,13 @@ def sh_dialog_dragon(src_kind, lt, t, dur, text, a=0.1, b=None, close=False):
 
 
 def sh_dialog_liang(kind, lt, t, dur, text, aura=0.0):
+    mo, talk = mouth("L", t)
+    ex = expr_at(t)
     if kind == "portrait":
-        img = full(LIANG_PORTRAIT, lt, dur, (420, 520), (430, 470), 1.0, 1.1)
+        img = full(LIANG_RIG.frame(t, mo, talk, ex), lt, dur, (420, 520), (430, 470), 1.0, 1.1)
     else:
-        img = panel("hero2", HERO, lt, dur, band_h=640, cy=560, pan=(-0.25, 0), zoom=(1.05, 1.15))
+        img = panel("hero2", HERO, lt, dur, band_h=640, cy=560, pan=(-0.25, 0), zoom=(1.05, 1.15),
+                    big=hero_rig().frame(t, mo, talk, ex))
     f = to_f(img)
     fx = FX()
     embers(fx, t, (150, 190, 255), n=100, k=0.5 + aura)
@@ -815,7 +913,7 @@ def bt_dodge(l, t, d):
     for k in range(5, 0, -1):  # afterimages
         xk = lerp(80, 640, eio(max(0, l - k * 0.05) / d))
         f = put_sprite(f, LP["run"], xk, 1160, 440, alpha=0.12 * (6 - k), tint=(0.6, 0.75, 1.2))
-    f = put_sprite(f, LP["run"], x, 1160, 440)
+    f = put_sprite(f, sprite_motion(LP["run"], t, step_phase=l * 2.5), x, 1160, 440)
     slash(fx, x + 40, 900, 260, 140, -2.6, 0.4, (l - 1.6) / 0.35, fade(l, 1.6, d, 0.2))
     f = fx.apply(f)
     return f
@@ -899,7 +997,7 @@ def bt_hurt(l, t, d):
         fx.dot(x, y, rnd.uniform(1, 3), (120, 110, 100))
     embers(fx, t, (255, 170, 90), n=100, k=0.7)
     f = fx.apply(f)
-    f = put_sprite(f, LP["kneel"], 380, 1160, 430)
+    f = put_sprite(f, sprite_motion(LP["kneel"], t, breath=2.8, seed=3), 380, 1160, 430)
     return subtitle(f, l, 0.1, d - 0.05, "Hanya itu kekuatanmu, manusia?", "LONG TIAN")
 
 
@@ -913,7 +1011,7 @@ def bt_rise(l, t, d):
     ring(fx, 360, 1150, 320 * k, (120, 180, 255), gw=24)
     embers(fx, t, (150, 200, 255), n=200, k=1.2, speed=3)
     f = fx.apply(f, 0.6 + 0.4 * k)
-    f = put_sprite(f, LP["lookup"], 360, 1170, 560)
+    f = put_sprite(f, sprite_motion(LP["lookup"], t, breath=1.8, hair=(0.68, 0.32, 0.3, 0.25, 0.1)), 360, 1170, 560)
     return subtitle(f, l, 0.05, d - 0.05, "Aku... belum kalah!", "LIANG CHEN")
 
 
@@ -991,7 +1089,7 @@ def bt_final_charge(l, t, d):
 
 def bt_final_strike(l, t, d):
     sx, sy = shake(t, 4 + 26 * fade(l, 0.3, 3.0, 0.1))
-    img = full(DRAGON_FULL, l, d, (414, 600), (414, 560), 1.2, 1.45, (sx, sy))
+    img = full(DFULL_RIG.frame(t, wind=2.5), l, d, (414, 600), (414, 560), 1.2, 1.45, (sx, sy))
     f = to_f(img)
     fx = FX()
     p = eout(l / 0.45)
@@ -1052,12 +1150,13 @@ def sh_after(lt, t):
     magic_circle(fx, 360, 1060, 300, t * 0.4, k=0.3)
     embers(fx, t, n=140, k=0.8, speed=0.6)
     f = fx.apply(f)
-    f = put_sprite(f, LP["back"], 360, 1180, 600)
+    f = put_sprite(f, sprite_motion(LP["back"], t, hair=(0.5, 0.3, 0.2, 0.26, 0.05)), 360, 1180, 600)
     return subtitle(f, lt, 0.3, 5.4, "Naga kuno telah bangkit. Dan pertarungan ini... baru permulaan.", "NARATOR")
 
 
 def sh_end(lt, t):
-    img = panel("hero_end", HERO, lt, 8.0, band_h=640, cy=600, pan=(0.2, 0), zoom=(1.12, 1.0))
+    img = panel("hero_end", HERO, lt, 8.0, band_h=640, cy=600, pan=(0.2, 0), zoom=(1.12, 1.0),
+                big=hero_rig().frame(t, expr=expr_at(t)))
     f = to_f(img) * 0.75
     fx = FX()
     embers(fx, t, n=160, k=0.8)
