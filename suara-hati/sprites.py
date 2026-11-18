@@ -39,8 +39,6 @@ def cutout(im, box=None, bright=185, sat=8, hole=300, keep_frac=0.12, erode=1):
 
 def split_strip(im, box, min_gap=4, min_w=25, **kw):
     """Split a horizontal strip of figures at empty columns; returns list of cutouts."""
-    full = cutout(im, box, keep_frac=0.0, **kw)
-    # recompute on the uncropped strip to keep x positions
     x0, y0, x1, y1 = box
     a = np.array(im.crop(box).convert("RGB")).astype(np.int16)
     bgl = (a.min(2) >= kw.get("bright", 185)) & ((a.max(2) - a.min(2)) <= kw.get("sat", 8))
@@ -60,7 +58,6 @@ def split_strip(im, box, min_gap=4, min_w=25, **kw):
             merged[-1][1] = r[1]
         else:
             merged.append(r)
-    del full
     return [cutout(im, (x0 + r[0] - 2, y0, x0 + r[1] + 2, y1), **kw) for r in merged if r[1] - r[0] >= min_w]
 
 
